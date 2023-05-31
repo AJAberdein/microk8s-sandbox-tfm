@@ -87,6 +87,14 @@ resource "aws_security_group" "microk8s_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "MicroK8s Dashboard"
+    to_port     = 10443
+    from_port   = 10443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port        = 0
     to_port          = 0
@@ -123,35 +131,121 @@ data "aws_ami" "ubuntu" {
 
 }
 
-# Instance
+# IAM Instance Role
 
-resource "aws_instance" "microk8s_instance" {
+resource "aws_iam_policy" "microk8s" {
+  name        = "microk8s-policy"
+  description = "MicroK8s IAM policy for S3 read access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = ["arn:aws:s3:::microk8s-125385123512/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = ["arn:aws:s3:::microk8s-125385123512"]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "microk8s" {
+  name = "microk8s-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "microk8s" {
+  policy_arn = aws_iam_policy.microk8s.arn
+  role       = aws_iam_role.microk8s.name
+}
+
+resource "aws_iam_instance_profile" "microk8s" {
+  name = "microk8s-profile"
+  role = aws_iam_role.microk8s.name
+}
+
+# Spot Instance
+
+resource "aws_spot_instance_request" "microk8s_spot_instance" {
+  # spot_price = "0.01"
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3a.medium"
+  instance_type          = "t3a.medium" # t3a.medium is the smallest instance type that supports NVMe
+  iam_instance_profile   = aws_iam_instance_profile.microk8s.name
   key_name               = aws_key_pair.generated_key.key_name
   vpc_security_group_ids = [aws_security_group.microk8s_sg.id]
   user_data              = templatefile("${path.module}/userdata.yaml", {})
   subnet_id              = aws_subnet.microk8s_subnet.id
 
+  associate_public_ip_address = true
+  wait_for_fulfillment        = true
+
   ebs_block_device {
     device_name = "/dev/sda1"
     volume_size = 25
   }
-  
-  tags = {
-    Name = "microk8s_instance"
-  }
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo '${tls_private_key.ssh_key.private_key_pem}' > ./'${var.microk8s_instance_key}'.pem
-      chmod 400 ./'${var.microk8s_instance_key}'.pem
-    EOT
+        echo '${tls_private_key.ssh_key.private_key_pem}' > ./'${var.microk8s_instance_key}'.pem
+        chmod 400 ./'${var.microk8s_instance_key}'.pem
+      EOT
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = "rm ./microk8s-instance-key.pem"
   }
+
+  tags = {
+    Name = "microk8s_instance"
+  }
 }
 
+# Instance
+
+# resource "aws_instance" "microk8s_instance" {
+#   ami                    = data.aws_ami.ubuntu.id
+#   instance_type          = "t3a.medium"
+#   iam_instance_profile   = aws_iam_instance_profile.microk8s.name
+#   key_name               = aws_key_pair.generated_key.key_name
+#   vpc_security_group_ids = [aws_security_group.microk8s_sg.id]
+#   user_data              = templatefile("${path.module}/userdata.yaml", {})
+#   subnet_id              = aws_subnet.microk8s_subnet.id
+
+#   ebs_block_device {
+#     device_name = "/dev/sda1"
+#     volume_size = 25
+#   }
+
+#   tags = {
+#     Name = "microk8s_instance"
+#   }
+
+#   provisioner "local-exec" {
+#     command = <<-EOT
+#       echo '${tls_private_key.ssh_key.private_key_pem}' > ./'${var.microk8s_instance_key}'.pem
+#       chmod 400 ./'${var.microk8s_instance_key}'.pem
+#     EOT
+#   }
+
+#   provisioner "local-exec" {
+#     when    = destroy
+#     command = "rm ./microk8s-instance-key.pem"
+#   }
+# }

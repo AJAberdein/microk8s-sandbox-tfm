@@ -12,19 +12,35 @@ provider "aws" {
   region  = "eu-west-1"
 }
 
-module "micro_k8s_instance" {
-  source = ".//micro-k8s-instance"
+module "resources_s3" {
+  source = ".//modules//s3"
 }
 
+# data "terraform_remote_state" "resources_s3" {
+  # backend = "s3"
+
+  # config = {
+  #   bucket = "my-bucket"
+  #   key    = "first-module-state/terraform.tfstate"
+  #   region = "eu-west-1"
+  # }
+# }
+
+module "microk8s_instance" {
+  source = ".//modules//ec2"
+  # depends_on = [
+  #   module.resources_s3
+  # ]
+}
 
 output "ec2" {
-  value = module.micro_k8s_instance.public_ip
+  value = module.microk8s_instance.public_ip
 }
 
 output "public_ip" {
-  value = module.micro_k8s_instance.public_ip
+  value = module.microk8s_instance.public_ip
 }
 
 output "ssh_script" {
-  value = module.micro_k8s_instance.ssh_script
+  value = module.microk8s_instance.ssh_script
 }

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+sudo snap refresh
+sudo snap install aws-cli --classic
+
+echo "usedata installation START"
+echo "------------------------------------"
+
+mkdir /home/ubuntu/scripts
+aws s3 cp s3://microk8s-125385123512/scripts/init.sh /home/ubuntu/scripts/init.sh
+aws s3 cp s3://microk8s-125385123512/scripts/build.sh /home/ubuntu/scripts/build.sh
+
+bash /home/ubuntu/scripts/init.sh
+bash /home/ubuntu/scripts/build.sh
+
+echo "------------------------------------"
+echo "usedata installation END"
+
+# TODO: pass in var bucketname
+# TODO: return response after provision
+
+# aws s3 cp s3://microk8s-125385123512/scripts/init.sh ~/scripts/
